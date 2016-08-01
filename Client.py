@@ -1,44 +1,89 @@
 import redis
 import threading
 import time
+import queue
 
-#conn = redis.Redis()
-
+conn = redis.Redis()
 name = ''
+mes_queue = queue.Queue()
 
 def login():
-    global name
-    name = input("Please input your nickname: ")
+    global name, conn
+    name = input("Please input your nickname(Blank is not allowed): ")
+    if conn.sismember("users", name):
+        print("The user already exists, please rename!")
+        login()
+    else:
+        conn.sadd("users", name)
 
-def pub():
-    global name
-    #global conn, name
-    conn = redis.Redis()
+def orderAnalyse():
+    global name, conn
     while True:
-        message = input("Please input message: ")
-        real_mes = '\n' + name + ': ' + message + '\n'
-        conn.publish("chat", real_mes.encode("utf-8"))
+        message = input("Chatroom> ")
+        order_list = message.lower().split(' ')
 
-def sub():
-    #global conn
-    conn = redis.Redis()
+        if order_list[0] == 'get':
+            while not mes_queue.empty():
+                print(mes_queue.get())
+        elif order_list[0] == 'downline':
+            conn.srem("users", name)
+            print("Thank you")
+            exit()
+        elif order_list[0] == 'pub':
+            mes_list = order_list[1:]
+            message = ''
+            for word in mes_list:
+                message += (word + ' ')
+            real_mes = name + ': ' + message 
+            conn.publish("chat", real_mes.encode("utf-8"))
+        elif order_list[0] == 'to':
+            message = input(order_list[1] + "> ")
+            real_mes = name + ': ' + message
+            conn.publish(order_list[1], real_mes.encode("utf-8"))
+        elif order_list[0] == 'users':
+            users = conn.smembers("users")
+            print(users)
+        else:
+            print("This command does not exist!")
+            orderAnalyse()
+
+def subPublic():
+    global mes_queue, conn
     sub = conn.pubsub()
     sub.subscribe(["chat"])
     for msg in sub.listen():
         if msg['data'] == 1:
             pass
         else:
-            print(msg['data'].decode('utf-8'))
+            mes_queue.put(msg['data'].decode('utf-8'))
+
+def subPrivate():
+    global mes_queue, conn, name
+    sub = conn.pubsub()
+    sub.subscribe([name])
+    for msg in sub.listen():
+        if msg['data'] == 1:
+            pass
+        else: 
+            real_mes = '----------------------------------\n' +\
+                       "whisper!!!!!!!!!!!!!!!!!!!!!!!!!!!\n" +\
+                       msg['data'].decode('utf-8') + '\n' +\
+                       '----------------------------------'
+            mes_queue.put(real_mes)
+
 
 
 def run_client():
     login()
-    sub_thread = threading.Thread(target = sub)
-    sub_thread.start()
+    subPub_thread = threading.Thread(target = subPublic)
+    subPri_thread = threading.Thread(target = subPrivate)
+    subPub_thread.setDaemon(True)
+    subPub_thread.start()
+    subPri_thread.setDaemon(True)
+    subPri_thread.start()
     time.sleep(3)
-    pub()
+    orderAnalyse()
 
 
 if __name__ == '__main__':
-    sub()
-    #run_client()
+    run_client()
