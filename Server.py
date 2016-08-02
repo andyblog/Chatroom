@@ -1,6 +1,8 @@
 import redis
 
+# 服务器端。
 conn = redis.Redis()
+
 
 def pub():
     global conn
